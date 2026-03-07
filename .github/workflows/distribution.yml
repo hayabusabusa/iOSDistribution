@@ -15,7 +15,7 @@ on:
 
 jobs:
   distribute:
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - name: Generate GitHub App token
         id: generate-token
