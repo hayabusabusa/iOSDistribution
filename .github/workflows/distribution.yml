@@ -1,4 +1,4 @@
-name: Main
+name: Distribute iOS App
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
         type: string
 
 jobs:
-  build:
+  distribute:
     runs-on: macos-latest
     steps:
       - name: Generate GitHub App token
@@ -33,5 +33,3 @@ jobs:
           ref: ${{ inputs.source_ref }}
           path: source
           token: ${{ steps.generate-token.outputs.token }}
-      
-      - run: ls

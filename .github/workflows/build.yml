@@ -1,0 +1,90 @@
+name: Build iOS App
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Repository name to checkout
+        required: true
+        type: string
+      source_sha:
+        description: Commit SHA on source repository for reporting
+        required: false
+        default: ""
+        type: string
+      source_ref:
+        description: Git ref (branch/tag/SHA) to checkout
+        required: false
+        default: main
+        type: string
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: hayabusabusa
+          repositories: ${{ inputs.source_repo }}
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: hayabusabusa/${{ inputs.source_repo }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: Build iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workspace_path=$(find source -name "*.xcworkspace" -type d | head -n 1)
+          if [[ -z "$workspace_path" ]]; then
+            echo "No .xcworkspace file found under source/"
+            exit 1
+          fi
+
+          echo "Using workspace: $workspace_path"
+          xcodebuild \
+            -workspace "$workspace_path" \
+            -scheme "App" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            build
+
+      - name: Report result to source repository
+        if: ${{ always() && inputs.source_sha != '' }}
+        uses: actions/github-script@v8
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        with:
+          github-token: ${{ steps.generate-token.outputs.token }}
+          script: |
+            const status = process.env.JOB_STATUS;
+            const conclusion = status === 'success'
+              ? 'success'
+              : status === 'cancelled'
+                ? 'cancelled'
+                : 'failure';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: process.env.SOURCE_REPO,
+              name: 'iOSDistribution / Build iOS App',
+              head_sha: process.env.SOURCE_SHA,
+              status: 'completed',
+              conclusion,
+              output: {
+                title: `Build ${conclusion}`,
+                summary: `Build workflow finished with status: ${status}. [View workflow run](${runUrl})`
+              }
+            });
