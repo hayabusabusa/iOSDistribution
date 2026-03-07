@@ -39,24 +39,10 @@ jobs:
           path: source
           token: ${{ steps.generate-token.outputs.token }}
 
-      - name: Build iOS app
+      - name: Build iOS app with Fastlane
         shell: bash
-        run: |
-          set -euo pipefail
-
-          workspace_path=$(find source -name "*.xcworkspace" -type d | head -n 1)
-          if [[ -z "$workspace_path" ]]; then
-            echo "No .xcworkspace file found under source/"
-            exit 1
-          fi
-
-          echo "Using workspace: $workspace_path"
-          xcodebuild \
-            -workspace "$workspace_path" \
-            -scheme "App" \
-            -configuration Release \
-            -destination "generic/platform=iOS" \
-            build
+        working-directory: source
+        run: fastlane ios build --fastfile "$GITHUB_WORKSPACE/fastlane/Fastfile"
 
       - name: Report result to source repository
         if: ${{ always() && inputs.source_sha != '' }}

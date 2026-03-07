@@ -1,0 +1,21 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build iOS app from checked out source"
+  lane :build do |options|
+    workspace = options[:workspace] || Dir.glob("**/*.xcworkspace").sort.first
+    UI.user_error!("No .xcworkspace found in source repository") unless workspace
+
+    scheme = options[:scheme] || ENV.fetch("IOS_SCHEME", "App")
+    configuration = "Debug"
+
+    scan(
+      workspace: workspace,
+      scheme: scheme,
+      configuration: configuration,
+      clean: true,
+      build_for_testing: true,
+      output_types: ""
+    )
+  end
+end
