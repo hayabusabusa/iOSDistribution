@@ -1,0 +1,29 @@
+name: Main
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: hayabusabusa
+          repositories: hibi
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: hayabusabusa/hibi
+          path: hibi
+          token: ${{ steps.generate-token.outputs.token }}
+      
+      - uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.generate-token.outputs.token }}
+          script: console.log(context)
