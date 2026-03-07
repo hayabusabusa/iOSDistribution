@@ -41,8 +41,7 @@ jobs:
 
       - name: Build iOS app with Fastlane
         shell: bash
-        working-directory: source
-        run: fastlane ios build --fastfile "$GITHUB_WORKSPACE/fastlane/Fastfile"
+        run: fastlane ios build
 
       - name: Report result to source repository
         if: ${{ always() && inputs.source_sha != '' }}
