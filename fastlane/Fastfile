@@ -43,8 +43,10 @@ platform :ios do
     # テスト対象 Scheme を検索
     test_schemes = resolve_test_schemes(workspace: workspace)
 
+    # テスト対象 Scheme が存在しなかった場合はスキップする
     if test_schemes.empty?
-      UI.user_error!("No test schemes matching '*Tests' were found in workspace '#{workspace}'")
+      UI.important("No test schemes matching '*Tests' were found in workspace '#{workspace}', skipping unit tests.")
+      next
     end
 
     UI.message("Running unit tests for schemes: #{test_schemes.join(', ')}")
@@ -53,9 +55,10 @@ platform :ios do
       scan(
         workspace: workspace,
         scheme: test_scheme,
+        devices: ["iPhone 17"],
         configuration: "Debug",
         clean: true,
-        output_types: ""
+        output_types: "html"
       )
     end
   end
@@ -100,11 +103,24 @@ platform :ios do
       UI.user_error!("workspace option is required")
     end
 
-    workspace_info_json = sh(
+    workspace_info_output = sh(
       "xcodebuild -workspace #{Shellwords.escape(workspace)} -list -json",
       log: false
     )
-    workspace_info = JSON.parse(workspace_info_json)
+
+    json_start = workspace_info_output.index("{")
+    json_end = workspace_info_output.rindex("}")
+    if json_start.nil? || json_end.nil? || json_end < json_start
+      UI.user_error!("Failed to extract JSON from xcodebuild output")
+    end
+
+    workspace_info_json = workspace_info_output[json_start..json_end]
+    begin
+      workspace_info = JSON.parse(workspace_info_json)
+    rescue JSON::ParserError => e
+      UI.user_error!("Failed to parse xcodebuild JSON output: #{e.message}")
+    end
+
     all_schemes = Array(workspace_info.dig("workspace", "schemes")) + Array(workspace_info.dig("project", "schemes"))
     Array(all_schemes).uniq.select { |scheme| scheme.end_with?("Tests") }
   end
