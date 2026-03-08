@@ -21,6 +21,9 @@ on:
 jobs:
   build:
     runs-on: macos-26
+    env:
+      SOURCE_ROOT: source
+      IOS_SCHEME: App
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,12 +42,12 @@ jobs:
         with:
           repository: hayabusabusa/${{ inputs.source_repo }}
           ref: ${{ inputs.source_ref }}
-          path: source
+          path: ${{ env.SOURCE_ROOT }}
           token: ${{ steps.generate-token.outputs.token }}
 
       - name: Build iOS app with Fastlane
         shell: bash
-        run: fastlane ios build
+        run: fastlane ios build source_root:${{ env.SOURCE_ROOT }} scheme:${{ env.IOS_SCHEME }}
 
       - name: Report result to source repository
         if: ${{ always() && inputs.source_sha != '' }}

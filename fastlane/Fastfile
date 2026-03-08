@@ -3,16 +3,44 @@ default_platform(:ios)
 platform :ios do
   desc "Build iOS app from checked out source"
   lane :build do |options|
-    workspace = options[:workspace] || Dir.glob("source/**/*.xcworkspace").sort.first
-    UI.user_error!("No .xcworkspace found in source repository") unless workspace
+    # 必須オプションの確認
+    scheme = options[:scheme]
+    if scheme.nil? || scheme.strip.empty?
+      UI.user_error!("scheme option is required")
+    end
 
-    scheme = options[:scheme] || ENV.fetch("IOS_SCHEME", "App")
-    configuration = "Debug"
+    source_root_input = options[:source_root]
+    if source_root_input.nil? || source_root_input.strip.empty?
+      UI.user_error!("source_root option is required")
+    end
+
+    # workspace ファイルのパスを特定
+    source_roots = if source_root_input.start_with?("/")
+      [source_root_input]
+    else
+      [
+        File.expand_path(source_root_input, Dir.pwd),
+        File.expand_path("../#{source_root_input}", __dir__)
+      ]
+    end
+    source_roots = source_roots.uniq.select { |path| Dir.exist?(path) }
+    workspace = source_roots
+        .flat_map { |root| Dir.glob(File.join(root, "**/*.xcworkspace")) }
+        .sort
+        .first
+
+    if source_roots.empty?
+      UI.user_error!("source_root '#{source_root_input}' does not exist")
+    end
+
+    if workspace.nil?
+      UI.user_error!("No .xcworkspace found under source_root '#{source_root_input}'")
+    end
 
     scan(
       workspace: workspace,
       scheme: scheme,
-      configuration: configuration,
+      configuration: "Debug",
       clean: true,
       build_for_testing: true,
       output_types: ""
