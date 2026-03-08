@@ -1,7 +1,10 @@
+require "json"
+require "shellwords"
+
 default_platform(:ios)
 
 platform :ios do
-  desc "Build iOS app from checked out source"
+  desc "Build iOS app"
   lane :build do |options|
     # 必須オプションの確認
     scheme = options[:scheme]
@@ -14,28 +17,8 @@ platform :ios do
       UI.user_error!("source_root option is required")
     end
 
-    # workspace ファイルのパスを特定
-    source_roots = if source_root_input.start_with?("/")
-      [source_root_input]
-    else
-      [
-        File.expand_path(source_root_input, Dir.pwd),
-        File.expand_path("../#{source_root_input}", __dir__)
-      ]
-    end
-    source_roots = source_roots.uniq.select { |path| Dir.exist?(path) }
-    workspace = source_roots
-        .flat_map { |root| Dir.glob(File.join(root, "**/*.xcworkspace")) }
-        .sort
-        .first
-
-    if source_roots.empty?
-      UI.user_error!("source_root '#{source_root_input}' does not exist")
-    end
-
-    if workspace.nil?
-      UI.user_error!("No .xcworkspace found under source_root '#{source_root_input}'")
-    end
+    # .xcworkspace へのパスを解決
+    workspace = resolve_workspace_path(source_root: source_root_input)
 
     scan(
       workspace: workspace,
@@ -45,5 +28,84 @@ platform :ios do
       build_for_testing: true,
       output_types: ""
     )
+  end
+
+  desc "Run unit tests for iOS app"
+  lane :unit_test do |options|
+    # 必須オプションの確認
+    source_root_input = options[:source_root]
+    if source_root_input.nil? || source_root_input.strip.empty?
+      UI.user_error!("source_root option is required")
+    end
+
+    # .xcworkspace へのパスを解決
+    workspace = resolve_workspace_path(source_root: source_root_input)
+    # テスト対象 Scheme を検索
+    test_schemes = resolve_test_schemes(workspace: workspace)
+
+    if test_schemes.empty?
+      UI.user_error!("No test schemes matching '*Tests' were found in workspace '#{workspace}'")
+    end
+
+    UI.message("Running unit tests for schemes: #{test_schemes.join(', ')}")
+
+    test_schemes.each do |test_scheme|
+      scan(
+        workspace: workspace,
+        scheme: test_scheme,
+        configuration: "Debug",
+        clean: true,
+        output_types: ""
+      )
+    end
+  end
+
+  desc "Resolve the path to the .xcworkspace file under the given source root"
+  private_lane :resolve_workspace_path do |options|
+    source_root_input = options[:source_root]
+    if source_root_input.nil? || source_root_input.strip.empty?
+      UI.user_error!("source_root option is required")
+    end
+
+    source_roots = if source_root_input.start_with?("/")
+      [source_root_input]
+    else
+      [
+        File.expand_path(source_root_input, Dir.pwd),
+        File.expand_path("../#{source_root_input}", __dir__)
+      ]
+    end
+    source_roots = source_roots.uniq.select { |path| Dir.exist?(path) }
+
+    if source_roots.empty?
+      UI.user_error!("source_root '#{source_root_input}' does not exist")
+    end
+
+    workspace = source_roots
+      .flat_map { |root| Dir.glob(File.join(root, "**/*.xcworkspace")) }
+      .sort
+      .first
+
+    if workspace.nil?
+      UI.user_error!("No .xcworkspace found under source_root '#{source_root_input}'")
+    end
+
+    workspace
+  end
+
+  desc "Resolve schemes named '*Tests' in the given workspace"
+  private_lane :resolve_test_schemes do |options|
+    workspace = options[:workspace]
+    if workspace.nil? || workspace.strip.empty?
+      UI.user_error!("workspace option is required")
+    end
+
+    workspace_info_json = sh(
+      "xcodebuild -workspace #{Shellwords.escape(workspace)} -list -json",
+      log: false
+    )
+    workspace_info = JSON.parse(workspace_info_json)
+    all_schemes = Array(workspace_info.dig("workspace", "schemes")) + Array(workspace_info.dig("project", "schemes"))
+    Array(all_schemes).uniq.select { |scheme| scheme.end_with?("Tests") }
   end
 end

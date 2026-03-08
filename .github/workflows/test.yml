@@ -1,0 +1,119 @@
+name: Test iOS App
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Repository name to checkout
+        required: true
+        type: string
+      source_sha:
+        description: Commit SHA on source repository for reporting
+        required: true
+        default: ""
+        type: string
+      source_ref:
+        description: Git ref (branch/tag/SHA) to checkout
+        required: false
+        default: main
+        type: string
+
+jobs:
+  test:
+    runs-on: macos-26
+    env:
+      SOURCE_ROOT: source
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: hayabusabusa
+          repositories: ${{ inputs.source_repo }}
+      
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: hayabusabusa/${{ inputs.source_repo }}
+          ref: ${{ inputs.source_ref }}
+          path: ${{ env.SOURCE_ROOT }}
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: Notify source repository workflow started
+        id: notify-started
+        uses: actions/github-script@v8
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        with:
+          github-token: ${{ steps.generate-token.outputs.token }}
+          script: |
+            const result = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: process.env.SOURCE_REPO,
+              name: 'iOSDistribution / Test iOS App',
+              head_sha: process.env.SOURCE_SHA,
+              status: 'in_progress',
+              output: {
+                title: 'Test in progress',
+                summary: 'Test workflow has started in iOSDistribution.'
+              }
+            });
+
+            return String(result.data.id);
+
+      - name: Test iOS app with Fastlane
+        shell: bash
+        run: fastlane ios unit_test source_root:${{ env.SOURCE_ROOT }}
+
+      - name: Report result to source repository
+        if: ${{ always() && inputs.source_sha != '' }}
+        uses: actions/github-script@v8
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CHECK_RUN_ID: ${{ steps.notify-started.outputs.result }}
+        with:
+          github-token: ${{ steps.generate-token.outputs.token }}
+          script: |
+            const status = process.env.JOB_STATUS;
+            const conclusion = status === 'success'
+              ? 'success'
+              : status === 'cancelled'
+                ? 'cancelled'
+                : 'failure';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const checkRunId = process.env.CHECK_RUN_ID ? Number(process.env.CHECK_RUN_ID) : NaN;
+
+            if (Number.isFinite(checkRunId)) {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: process.env.SOURCE_REPO,
+                check_run_id: checkRunId,
+                status: 'completed',
+                conclusion,
+                output: {
+                  title: `Test ${conclusion}`,
+                  summary: `Test workflow finished with status: ${status}. [View workflow run](${runUrl})`
+                }
+              });
+            } else {
+              await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: process.env.SOURCE_REPO,
+                name: 'iOSDistribution / Test iOS App',
+                head_sha: process.env.SOURCE_SHA,
+                status: 'completed',
+                conclusion,
+                output: {
+                  title: `Test ${conclusion}`,
+                  summary: `Test workflow finished with status: ${status}. [View workflow run](${runUrl})`
+                }
+              });
+            }
