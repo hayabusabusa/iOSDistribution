@@ -1,0 +1,35 @@
+name: Release iOS App
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Repository name to checkout
+        required: true
+        type: string
+      source_ref:
+        description: Git ref (branch/tag/SHA) to checkout
+        required: false
+        default: main
+        type: string
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: hayabusabusa
+          repositories: ${{ inputs.source_repo }}
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: hayabusabusa/${{ inputs.source_repo }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          token: ${{ steps.generate-token.outputs.token }}
